@@ -1,0 +1,512 @@
+VERSION 5.00
+Begin VB.PropertyPage ppImgSelect 
+   Caption         =   "Image Selection"
+   ClientHeight    =   3600
+   ClientLeft      =   0
+   ClientTop       =   0
+   ClientWidth     =   4800
+   PaletteMode     =   0  'Halftone
+   ScaleHeight     =   240
+   ScaleMode       =   3  'Pixel
+   ScaleWidth      =   320
+   Begin VB.CommandButton cmdErase 
+      Caption         =   "Delete Image"
+      Height          =   600
+      Left            =   3435
+      TabIndex        =   5
+      Top             =   2760
+      Width           =   1170
+   End
+   Begin VB.CommandButton cmdSelect 
+      Caption         =   "..."
+      Height          =   345
+      Index           =   2
+      Left            =   2535
+      TabIndex        =   4
+      Top             =   2910
+      Width           =   540
+   End
+   Begin VB.ComboBox cboItem 
+      Height          =   315
+      Left            =   255
+      Sorted          =   -1  'True
+      Style           =   2  'Dropdown List
+      TabIndex        =   3
+      Top             =   2070
+      Width           =   2880
+   End
+   Begin VB.ComboBox cboSection 
+      Height          =   315
+      Left            =   255
+      Sorted          =   -1  'True
+      Style           =   2  'Dropdown List
+      TabIndex        =   2
+      Top             =   1740
+      Width           =   2880
+   End
+   Begin VB.CommandButton cmdSelect 
+      Caption         =   "..."
+      Height          =   345
+      Index           =   1
+      Left            =   2580
+      TabIndex        =   1
+      Top             =   1320
+      Width           =   540
+   End
+   Begin VB.TextBox txtFile 
+      Height          =   285
+      Index           =   1
+      Left            =   255
+      Locked          =   -1  'True
+      TabIndex        =   10
+      Top             =   1335
+      Width           =   2220
+   End
+   Begin VB.CommandButton cmdSelect 
+      Caption         =   "..."
+      Height          =   345
+      Index           =   0
+      Left            =   2580
+      TabIndex        =   0
+      Top             =   435
+      Width           =   540
+   End
+   Begin VB.TextBox txtFile 
+      Height          =   285
+      Index           =   0
+      Left            =   255
+      Locked          =   -1  'True
+      TabIndex        =   6
+      Top             =   450
+      Width           =   2220
+   End
+   Begin VB.Label lblPreview 
+      Alignment       =   2  'Center
+      AutoSize        =   -1  'True
+      Caption         =   "Preview"
+      Height          =   195
+      Left            =   3480
+      TabIndex        =   12
+      Top             =   240
+      Width           =   1110
+   End
+   Begin VB.Label Label1 
+      AutoSize        =   -1  'True
+      Caption         =   "Click button to Paste Image"
+      Height          =   195
+      Index           =   3
+      Left            =   375
+      TabIndex        =   11
+      Top             =   2985
+      Width           =   1950
+   End
+   Begin VB.Label Label1 
+      AutoSize        =   -1  'True
+      Caption         =   " Paste from Clipboard "
+      Height          =   195
+      Index           =   2
+      Left            =   300
+      TabIndex        =   9
+      Top             =   2655
+      Width           =   1545
+   End
+   Begin VB.Shape Shape1 
+      Height          =   645
+      Index           =   2
+      Left            =   120
+      Top             =   2745
+      Width           =   3135
+   End
+   Begin VB.Label Label1 
+      AutoSize        =   -1  'True
+      Caption         =   " Select from Resource "
+      Height          =   195
+      Index           =   1
+      Left            =   300
+      TabIndex        =   8
+      Top             =   1065
+      Width           =   1620
+   End
+   Begin VB.Shape Shape1 
+      Height          =   1425
+      Index           =   1
+      Left            =   135
+      Top             =   1125
+      Width           =   3135
+   End
+   Begin VB.Label Label1 
+      AutoSize        =   -1  'True
+      Caption         =   " Select from File "
+      Height          =   195
+      Index           =   0
+      Left            =   300
+      TabIndex        =   7
+      Top             =   180
+      Width           =   1170
+   End
+   Begin VB.Shape Shape1 
+      Height          =   645
+      Index           =   0
+      Left            =   135
+      Top             =   270
+      Width           =   3135
+   End
+End
+Attribute VB_Name = "ppImgSelect"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = False
+Attribute VB_Exposed = False
+Option Explicit
+
+' A property page to display images from a resource file, disk file, or clipboard
+' The basics and uses my c32bppDIB suite to store images. Can be modified to use
+' a simple stdPicture object if you choose
+
+' For painting the sample area without flicker
+Private Declare Function InvalidateRect Lib "user32.dll" (ByVal hwnd As Long, ByRef lpRect As RECT, ByVal bErase As Long) As Long
+Private Type RECT
+    Left As Long
+    Top As Long
+    Right As Long
+    Bottom As Long
+End Type
+
+' for allowing user to browse for a file
+Private Type OPENFILENAME
+     lStructSize As Long
+     hwndOwner As Long
+     hInstance As Long
+     lpstrFilter As String
+     lpstrCustomFilter As String
+     nMaxCustFilter As Long
+     nFilterIndex As Long
+     lpstrFile As String
+     nMaxFile As Long
+     lpstrFileTitle As String
+     nMaxFileTitle As Long
+     lpstrInitialDir As String
+     lpstrTitle As String
+     Flags As Long
+     nFileOffset As Integer
+     nFileExtension As Integer
+     lpstrDefExt As String
+     lCustData As Long
+     lpfnHook As Long
+     lpTemplateName As String
+End Type
+Private Declare Function GetOpenFileName Lib "comdlg32.dll" Alias "GetOpenFileNameA" (pOpenfilename As OPENFILENAME) As Long
+Private Const OFN_DONTADDTORECENT As Long = &H2000000
+Private Const OFN_ENABLESIZING As Long = &H800000
+Private Const OFN_EXPLORER As Long = &H80000
+Private Const OFN_FILEMUSTEXIST As Long = &H1000
+Private Const OFN_LONGNAMES As Long = &H200000
+
+
+' note: the usercontrol object MUST BE specifically named; change this to your usercontrol's name
+Private ctrlSelected As UserControl1    ' allows us to use Friend properties
+Private cR As cRESreader                ' resource file reader (design time,IDE)
+Private m_CanvasWidth As Long           ' the sample image width
+Private cImage As c32bppDIB             ' class to store selected image
+
+Private Sub DrawImage()
+
+    ' since the property page does not have the AutoRedraw set,
+    ' we can force a redraw by using InvalidateRect. Better than
+    ' Refresh which causes flicker
+    
+    Dim wRect As RECT   ' identify area to refresh
+    wRect.Left = ScaleWidth - m_CanvasWidth - 20
+    wRect.Right = ScaleWidth
+    wRect.Top = lblPreview.Top + lblPreview.Height + 10
+    wRect.Bottom = cmdErase.Top - 10
+    ' call API to refresh the specific area
+    InvalidateRect PropertyPage.hwnd, wRect, 1
+    
+End Sub
+
+Private Sub cboItem_Click()
+
+    ' user selected a resource item
+    If cboItem.ListIndex = -1 Then Exit Sub
+    
+    Dim resArray() As Byte, tPic As StdPicture
+    Dim tImg As New c32bppDIB
+    
+    ' call function to extract a specific resource
+    cR.ExtractResourceItem cboSection.Text, cboItem.Text, resArray(), tPic
+
+    If tPic Is Nothing Then
+        ' resource was not vbPicTypeBitmap,Icon,Cursor
+        tImg.LoadPicture_Stream resArray, m_CanvasWidth, m_CanvasWidth
+    Else
+        tImg.LoadPicture_StdPicture tPic
+    End If
+    
+    If tImg.Handle = 0 Then
+        Set tImg = Nothing  ' probably from a Custom section & the resData was not an image
+        MsgBox "That resource is not a valid image.", vbInformation + vbOKOnly, "Error"
+    Else
+        Set cImage = Nothing
+        Set cImage = tImg
+        cmdSelect(0).Tag = 1    ' this will track the last image selection option
+        ' cache  these temporarily
+        cboItem.Tag = cboItem.Text
+        cboSection.Tag = cboSection.Text
+        Changed = True          ' enable the Apply button
+        DrawImage               ' force refresh
+    End If
+    
+End Sub
+
+Private Sub cboSection_Click()
+
+    If cboSection.ListIndex = -1 Then Exit Sub
+    
+    ' user selected a resource section
+    Dim Index As Long, resName As String
+    
+    ' populate combobox with resources from that section
+    cboItem.Clear
+    Do
+        resName = cR.ResourceID(cboSection.Text, Index)
+        If resName = vbNullString Then Exit Do
+        cboItem.AddItem resName
+        Index = Index + 1
+    Loop
+    
+End Sub
+
+Private Sub cmdErase_Click()
+
+    ' user wants the image removed
+    Set ctrlSelected.Image = Nothing
+    cImage.DestroyDIB
+    DrawImage       ' erase the image
+    Changed = False ' disable the Apply button
+    
+End Sub
+
+Private Sub cmdSelect_Click(Index As Integer)
+    
+    Dim sFile As String, tPic As StdPicture
+    
+    Select Case Index
+    Case 0: ' from file
+        sFile = GetFileName("Select Image File")
+        If Not sFile = vbNullString Then
+            txtFile(Index).Text = sFile
+            If cImage.LoadPicture_File(sFile, m_CanvasWidth, m_CanvasWidth) = False Then
+                MsgBox "Could not load that image", vbInformation + vbOKOnly, "Error"
+            Else
+                DrawImage
+                cmdSelect(0).Tag = 0    ' this will track the last image selection option
+                Changed = True          ' enable Apply button
+            End If
+        End If
+        
+    Case 1: ' selecting a resource file
+        sFile = GetFileName("Select Project's Res File", App.Path, "Resource Files" & Chr$(0) & "*.res" & Chr$(0))
+        If Not sFile = vbNullString Then
+            ctrlSelected.ResourceFileName = sFile
+            txtFile(Index).Text = sFile
+            PopulateResourceLists True  ' populate the resource groups in the selected file
+        End If
+        Refresh
+        
+    Case 2: ' from clipboard
+        On Error Resume Next
+        With Clipboard
+            If (.GetFormat(vbCFBitmap) Or .GetFormat(vbCFDIB) Or .GetFormat(vbCFEMetafile) Or .GetFormat(vbCFMetafile)) Then
+                Set tPic = .GetData()
+                If Not tPic Is Nothing Then
+                    Call cImage.LoadPicture_StdPicture(tPic)
+                    DrawImage
+                    cmdSelect(0).Tag = 2    ' this will track the last image selection option
+                    Changed = True          ' enable Apply button
+                End If
+            End If
+            If tPic Is Nothing Then
+                MsgBox "The clipboard contents are not a valid image format", vbInformation + vbOKOnly, "Error"
+            End If
+        End With
+            
+    End Select
+End Sub
+
+Private Sub PropertyPage_ApplyChanges()
+
+    With ctrlSelected
+        If cmdSelect(0).Tag = "1" Then              ' last image selected was from the resource file
+            .ResourceFileName = txtFile(1).Text     ' ensure UC keeps path
+            .ImageResSection = cboSection.Tag       ' which section?
+            .ImageResID = cboItem.Tag               ' which ID - forces UC to update its image
+        Else
+            Set .Image = cImage                     ' copy current image to UC
+        End If
+    End With
+    Changed = False
+    
+End Sub
+
+Private Sub PropertyPage_Initialize()
+    Set cImage = New c32bppDIB
+End Sub
+
+Private Sub PropertyPage_Paint()
+
+    Dim X As Long, Y As Long, imgW As Long, imgH As Long
+    Dim canvasX As Long, canvasY As Long
+    
+    If Not cImage Is Nothing Then
+        canvasX = (Shape1(0).Width + Shape1(0).Left) + 10   ' where to display the image
+        canvasY = lblPreview.Top + lblPreview.Height + 10
+        
+        ' get scaled size based on our canvas dimensions
+        cImage.ScaleImage m_CanvasWidth, ScaleHeight - canvasY - 10, imgW, imgH, scaleDownAsNeeded
+        
+        ' center image horizontally & draw it
+        canvasX = (m_CanvasWidth - imgW) \ 2 + canvasX
+        cImage.Render PropertyPage.hdc, canvasX, canvasY, imgW, imgH
+    End If
+    
+End Sub
+
+Private Sub PropertyPage_SelectionChanged()
+    
+
+    ' User selected another/different UC. This property page will only effect
+    ' the image of the last selected UC
+    
+    cImage.DestroyDIB                       ' clear our local sample image
+    If SelectedControls.count = 0 Then
+        Set ctrlSelected = Nothing
+    Else
+        Set ctrlSelected = SelectedControls(SelectedControls.count - 1)
+        
+        ' if a resource file was already identified; don't remove it from the property page
+        ' This way a user doesn't have to go & reselect it for each control they are modifying
+        
+        If cboSection.ListCount = 0 Or cR Is Nothing Then
+        
+            ' no resource loaded; is the current UC refernecing one?
+            If Not ctrlSelected.ResourceFileName = vbNullString Then
+                ' ok, fill in the info & gather resource file flags
+                txtFile(1).Text = ctrlSelected.ResourceFileName
+                PopulateResourceLists False
+                If Not ctrlSelected.ImageResID = vbNullString Then
+                    On Error Resume Next
+                    cboSection = ctrlSelected.ImageResSection   ' display the resource the UC is referencing
+                    cboItem = ctrlSelected.ImageResID
+                    If Error Then Err.Clear
+                    cImage.DestroyDIB
+                End If
+            End If
+        Else
+            ' we have a previously identified resource file; is this control referencing one?
+            If Not ctrlSelected.ImageResID = vbNullString Then
+                cboSection = ctrlSelected.ImageResSection   ' yep, display it
+                cboItem = ctrlSelected.ImageResID
+                If ctrlSelected.ResourceFileName = vbNullString Then
+                    ctrlSelected.ResourceFileName = txtFile(1).Text
+                End If
+            Else
+                cboItem.ListIndex = -1  ' nope; unselect the resource item from the combobox
+            End If
+        End If
+        
+        ' let's get image the selected control is currently displaying
+        If Not ctrlSelected.Image Is Nothing Then
+            ctrlSelected.Image.CopyImageTo cImage
+            cmdSelect(0).Tag = 0    ' this will track the last image selection option
+            DrawImage
+        End If
+        Changed = False
+    End If
+        
+    ' this can be erased when new images are selected; ensure it is calculated
+    m_CanvasWidth = ScaleWidth - (Shape1(0).Width + Shape1(0).Left) - 20
+            
+End Sub
+
+Private Sub PopulateResourceLists(bReset As Boolean)
+
+    ' Function simply gets the resource groups/sections from an IDE resource file
+    ' referenced by the selected control
+    
+    Dim Index As Long, resName As String
+    
+    If cR Is Nothing Then
+        Set cR = New cRESreader
+    ElseIf bReset Then
+        cboItem.Clear
+        cboSection.Clear
+    Else
+        Exit Sub
+    End If
+    
+    If Not ctrlSelected.ResourceFileName = vbNullString Then
+        If cR.ScanResources(ctrlSelected.ResourceFileName) = True Then
+            Do
+                resName = cR.ResourceSection(Index)
+                If resName = vbNullString Then Exit Do
+                cboSection.AddItem resName
+                Index = Index + 1
+            Loop
+            If Not cboSection.ListCount = 0 Then cboSection.ListIndex = 0
+        Else
+            ctrlSelected.ResourceFileName = vbNullString
+            txtFile(1).Text = vbNullString
+            MsgBox "Ensure you selected the correct Resource file. The one selected is not valid", vbInformation + vbOKOnly, "Error"
+        End If
+    End If
+    
+End Sub
+
+Private Function GetFileName(dlgTitle As String, Optional StartPath As String, Optional Filter As String) As String
+
+    Dim ofn As OPENFILENAME
+    Dim rtn As Long
+    
+    With ofn
+        .lStructSize = Len(ofn)
+        .hwndOwner = PropertyPage.hwnd
+        .hInstance = App.hInstance
+    
+        If Filter = vbNullString Then
+            .lpstrFilter = "All Images" & Chr$(0) & "*gif;*.bmp;*.jpg;*.jpeg;*.ico;*.cur;*.wmf;*.emf;*.png" & _
+                                         Chr$(0) & "Bitmaps" & Chr$(0) & "*.bmp" & Chr$(0) & "GIFs" & Chr$(0) & "*.gif" & _
+                                         Chr$(0) & "Icons and Cursors" & Chr$(0) & "*.ico;*.cur" & Chr$(0) & "JPGs" & Chr$(0) & "*.jpg;*.jpeg" & _
+                                         Chr$(0) & "Meta Files" & Chr$(0) & "*.wmf;*.emf" & Chr$(0) & "PNGs" & Chr$(0) & "*.png" & Chr$(0) & "All Files" & Chr$(0) & "*.*" & Chr$(0)
+        Else
+            .lpstrFilter = Filter
+        End If
+        .lpstrInitialDir = StartPath
+        .lpstrFile = Space(254)
+        .nMaxFile = 255
+        .lpstrFileTitle = Space(254)
+        .nMaxFileTitle = 255
+        .lpstrTitle = dlgTitle
+        .lpstrInitialDir = ""
+        .Flags = OFN_LONGNAMES Or OFN_FILEMUSTEXIST Or OFN_EXPLORER Or OFN_ENABLESIZING Or OFN_DONTADDTORECENT
+        
+    End With
+    
+    rtn = GetOpenFileName(ofn)
+
+    If Not rtn = 0 Then
+        rtn = InStr(ofn.lpstrFile, Chr$(0))
+        If rtn = -1 Then
+            GetFileName = ofn.lpstrFile
+        Else
+            GetFileName = Left(ofn.lpstrFile, rtn - 1)
+        End If
+    End If
+
+End Function
+
+Private Sub PropertyPage_Terminate()
+    Set cR = Nothing
+    Set cImage = Nothing
+    Set ctrlSelected = Nothing
+End Sub
